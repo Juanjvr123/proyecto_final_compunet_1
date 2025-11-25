@@ -9,7 +9,7 @@ import { Ice } from 'ice';
 import '../generated/Chat.js';
 const Chat = window.Chat || Ice._ModuleRegistry.module("Chat");
 
-const HOSTNAME = '192.168.1.3';
+const HOSTNAME = 'localhost';
 const ICE_PORT = 10001; // WebSocket port
 
 let communicator = null;

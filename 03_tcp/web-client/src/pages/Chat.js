@@ -26,7 +26,8 @@ import {
     answerCall,
     hangUp,
     getLocalStream,
-    receiveAudioChunk
+    receiveAudioChunk,
+    activateCall
 } from '../services/webrtcService.js';
 
 function Chat() {
@@ -239,6 +240,15 @@ async function initializeChat(username) {
             onCallAccepted: (from) => {
                 console.log('[CHAT] ✅ Llamada aceptada por:', from);
                 showCallActiveUI(from);
+                
+                // CRÍTICO: Activar la recepción de audio en el llamador
+                activateCall();
+                
+                // Asegurar que el llamador también inicie la recepción de audio
+                if (!inCall) {
+                    inCall = true;
+                    callWithUser = from;
+                }
             }
         });
         
@@ -1249,6 +1259,9 @@ async function handleCallButton() {
         callWithUser = currentChat.name;
         inCall = true;
         showCallUI(currentChat.name, callResult.localStream);
+        
+        // Mostrar UI de llamada activa para el llamador
+        showCallActiveUI(currentChat.name);
     }
 }
 
@@ -1279,6 +1292,9 @@ async function handleIncomingCall(from) {
             callWithUser = from;
             inCall = true;
             showCallUI(from, callResult.localStream);
+            
+            // Mostrar UI de llamada activa
+            showCallActiveUI(from);
             
             // Cambiar al chat del usuario que llama
             selectUserDirectly(from);

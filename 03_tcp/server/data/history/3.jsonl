@@ -1,1 +1,4 @@
 {type:voice_note,from:3,target:5,isGroup:false,file:data\media\vn_1764062658357.raw,ts:2025-11-25T09:24:18.450920300Z}
+{type:text,from:2,target:3,isGroup:false,msg:hola,ts:2025-11-25T17:32:44.182701700Z}
+{type:text,from:3,target:2,isGroup:false,msg:como vas ?,ts:2025-11-25T17:32:51.763172200Z}
+{type:text,from:3,target:2-3-5,isGroup:true,msg:hola,ts:2025-11-25T17:33:14.479199Z}

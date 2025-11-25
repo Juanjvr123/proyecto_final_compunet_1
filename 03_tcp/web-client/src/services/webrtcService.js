@@ -16,6 +16,7 @@ let audioElement = null;
 let sourceBuffer = null;
 let mediaSource = null;
 let pendingChunks = [];
+let isCallActive = false; // Flag para saber si la llamada está activa
 
 /**
  * Inicializar el servicio WebRTC
@@ -23,6 +24,14 @@ let pendingChunks = [];
 export function initWebRTC(username) {
     currentUsername = username;
     console.log('[WebRTC] Service initialized for user:', username);
+}
+
+/**
+ * Activar la llamada (para cuando se acepta desde el otro lado)
+ */
+export function activateCall() {
+    isCallActive = true;
+    console.log('[AUDIO-WS] Call activated - audio reception enabled');
 }
 
 /**
@@ -37,16 +46,21 @@ export async function startCall(from, to, audioOnly = false) {
         // Desbloquear autoplay con audio silencioso (user interaction)
         await unlockAudioPlayback();
         
-        // Inicializar MediaSource para recibir audio
+        // IMPORTANTE: Inicializar MediaSource para recibir audio (bidireccional)
         await initMediaSource();
+        console.log('[AUDIO-WS] MediaSource ready for receiving audio');
         
         // Obtener stream local
         const constraints = { audio: true, video: false };
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
         console.log('[AUDIO-WS] Local stream obtained');
         
+        // MARCAR LLAMADA COMO ACTIVA antes de iniciar streaming
+        isCallActive = true;
+        
         // Iniciar streaming de audio
         await startAudioStreaming(from, to);
+        console.log('[AUDIO-WS] Audio streaming active - bidirectional ready');
         
         return { success: true, localStream };
         
@@ -116,6 +130,9 @@ export async function answerCall(from, to, audioOnly = false) {
         const constraints = { audio: true, video: false };
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
         console.log('[AUDIO-WS] Local stream obtained');
+        
+        // MARCAR LLAMADA COMO ACTIVA antes de aceptar
+        isCallActive = true;
         
         // Notificar aceptación al servidor
         await acceptCall(to, from);
@@ -235,6 +252,12 @@ export async function receiveAudioChunk(audioData) {
             return;
         }
         
+        // CRÍTICO: Solo procesar audio si la llamada está activa
+        if (!isCallActive) {
+            console.log('[AUDIO-WS] Ignorando chunk - llamada no activa aún');
+            return;
+        }
+        
         // Inicializar MediaSource si no existe
         if (!mediaSource || mediaSource.readyState !== 'open') {
             pendingChunks.push(audioData);
@@ -270,6 +293,9 @@ export async function receiveAudioChunk(audioData) {
 export async function hangUp(from, to) {
     try {
         console.log('[AUDIO-WS] Hanging up call');
+        
+        // Resetear flag de llamada activa
+        isCallActive = false;
         
         // Detener streaming
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
