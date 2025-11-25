@@ -1,0 +1,18 @@
+plugins {
+    id 'java'
+}
+
+allprojects {
+    repositories { 
+        mavenCentral()
+        // ZeroC Ice repository
+        maven { url "https://repo.zeroc.com/nexus/content/repositories/releases" }
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    // Forzamos a que use el JDK 17 para no tener mas errores
+    java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }
+    tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+}

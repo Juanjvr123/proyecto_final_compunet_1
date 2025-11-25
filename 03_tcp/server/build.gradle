@@ -1,0 +1,19 @@
+// Server build.gradle 
+
+plugins { 
+    id 'application'
+}
+
+application { 
+    mainClass = 'ui.MainIce' 
+}
+
+dependencies {
+    implementation 'com.google.code.gson:gson:2.10.1'
+    
+    // ZeroC Ice dependencies
+    implementation 'com.zeroc:ice:3.7.10'
+    implementation 'com.zeroc:icebox:3.7.10'
+}
+
+

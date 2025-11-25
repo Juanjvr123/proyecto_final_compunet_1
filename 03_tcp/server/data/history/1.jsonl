@@ -1,0 +1,13 @@
+{type:text,from:2,target:1,isGroup:false,msg:hola,ts:2025-11-07T09:08:35.412446100Z}
+{type:text,from:1,target:1-6-0,isGroup:true,msg:quemas,ts:2025-11-25T04:26:58.183657600Z}
+{type:text,from:1,target:0,isGroup:false,msg:h,ts:2025-11-25T06:12:10.681342400Z}
+{type:text,from:0,target:1,isGroup:false,msg:hoooo,ts:2025-11-25T06:12:15.926749500Z}
+{type:voice_note,from:1,target:1-6-0,isGroup:true,file:data\media\vn_1764051348295.raw,ts:2025-11-25T06:15:48.330481300Z}
+{type:voice_note,from:1,target:4,isGroup:false,file:data\media\vn_1764051585296.raw,ts:2025-11-25T06:19:45.303677800Z}
+{type:voice_note,from:1,target:2,isGroup:false,file:data\media\vn_1764053827336.raw,ts:2025-11-25T06:57:07.444409800Z}
+{type:voice_note,from:1,target:1-6-0,isGroup:true,file:data\media\vn_1764053856740.raw,ts:2025-11-25T06:57:36.749878500Z}
+{type:voice_note,from:1,target:1-6-0,isGroup:true,file:data\media\vn_1764053885429.raw,ts:2025-11-25T06:58:05.437191100Z}
+{type:voice_note,from:0,target:1,isGroup:false,file:data\media\vn_1764057081227.raw,ts:2025-11-25T07:51:21.238580200Z}
+{type:voice_note,from:1,target:01,isGroup:false,file:data\media\vn_1764057106712.raw,ts:2025-11-25T07:51:46.717770400Z}
+{type:text,from:1,target:6,isGroup:false,msg:hola 6,ts:2025-11-25T07:52:47.751153Z}
+{type:voice_note,from:1,target:09,isGroup:false,file:data\media\vn_1764057885057.raw,ts:2025-11-25T08:04:45.071503600Z}

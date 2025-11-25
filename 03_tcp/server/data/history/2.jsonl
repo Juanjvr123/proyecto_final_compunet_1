@@ -1,0 +1,3 @@
+{type:text,from:2,target:1,isGroup:false,msg:hola,ts:2025-11-07T09:08:35.412446100Z}
+{type:text,from:2,target:12,isGroup:true,msg:ajj,ts:2025-11-07T09:08:48.228494900Z}
+{type:voice_note,from:1,target:2,isGroup:false,file:data\media\vn_1764053827336.raw,ts:2025-11-25T06:57:07.444409800Z}
