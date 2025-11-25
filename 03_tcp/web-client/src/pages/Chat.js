@@ -24,11 +24,9 @@ import {
     initWebRTC,
     startCall,
     answerCall,
-    handleOffer,
-    handleAnswer,
-    addICECandidate,
     hangUp,
-    getLocalStream
+    getLocalStream,
+    receiveAudioChunk
 } from '../services/webrtcService.js';
 
 function Chat() {
@@ -219,17 +217,28 @@ async function initializeChat(username) {
             
             onWebRTCSignal: (from, signalType, signalData) => {
                 console.log('[CHAT] 🔄 Señal WebRTC de:', from, 'tipo:', signalType);
-                handleWebRTCSignal(from, signalType, signalData);
+                // Ya no se usa con WebSocket
             },
             
             onICECandidate: (from, candidate) => {
                 console.log('[CHAT] 🧊 Candidato ICE de:', from);
-                addICECandidate(from, candidate);
+                // Ya no se usa con WebSocket
             },
             
             onCallEnded: (from) => {
                 console.log('[CHAT] ☎️ Llamada terminada por:', from);
                 endCallUI();
+            },
+            
+            // Nuevos callbacks para audio streaming
+            onAudioChunk: (from, audioData) => {
+                console.log('[CHAT] 🔊 Audio chunk recibido de:', from, 'tamaño:', audioData.length);
+                receiveAudioChunk(audioData);
+            },
+            
+            onCallAccepted: (from) => {
+                console.log('[CHAT] ✅ Llamada aceptada por:', from);
+                showCallActiveUI(from);
             }
         });
         
@@ -1280,16 +1289,17 @@ async function handleIncomingCall(from) {
 }
 
 /**
- * Manejar señales WebRTC (offer/answer)
+ * Mostrar UI de llamada activa
  */
-async function handleWebRTCSignal(from, signalType, signalData) {
-    console.log('[CALL] Manejando señal:', signalType, 'de:', from);
-    const username = sessionStorage.getItem('username');
-    
-    if (signalType === 'offer') {
-        await handleOffer(from, username, signalData);
-    } else if (signalType === 'answer') {
-        await handleAnswer(from, signalData);
+function showCallActiveUI(remoteUser) {
+    console.log('[CALL] Mostrando UI de llamada activa con:', remoteUser);
+    const callContainer = document.getElementById('callContainer');
+    if (callContainer) {
+        const statusDiv = callContainer.querySelector('.call-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '✅ Conectado - Audio streaming activo';
+            statusDiv.style.color = '#28a745';
+        }
     }
 }
 
@@ -1361,16 +1371,20 @@ function showCallUI(remoteUser, localStream) {
     callContainer.innerHTML = `
         <div class="call-info">
             <h3>📞 En llamada con ${remoteUser}</h3>
-            <div class="call-status">Conectado...</div>
+            <div class="call-status">🔄 Conectando via WebSocket...</div>
         </div>
-        <div class="call-videos">
-            <div class="video-container">
-                <video id="localVideo" autoplay muted playsinline></video>
-                <label>Tú</label>
+        <div class="call-audio-indicators">
+            <div class="audio-indicator">
+                <div class="audio-wave local">
+                    <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <label>🎤 Tu audio</label>
             </div>
-            <div class="video-container">
-                <video id="remoteVideo" autoplay playsinline muted="false"></video>
-                <label>${remoteUser}</label>
+            <div class="audio-indicator">
+                <div class="audio-wave remote" id="remoteAudioIndicator">
+                    <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <label>🔊 Audio de ${remoteUser}</label>
             </div>
         </div>
         <div class="call-controls">
@@ -1378,15 +1392,12 @@ function showCallUI(remoteUser, localStream) {
         </div>
     `;
     
-    // Mostrar stream local en video
-    const localVideo = document.getElementById('localVideo');
-    if (localVideo && localStream) {
-        localVideo.srcObject = localStream;
-    }
-    
     // Actualizar botón de llamada
     callButton.innerHTML = '🔴';
     callButton.title = 'Colgar';
+    
+    // Animar indicadores de audio
+    animateAudioIndicators();
 }
 
 /**
@@ -1424,6 +1435,30 @@ function selectUserDirectly(username) {
             btn.click();
         }
     });
+}
+
+/**
+ * Animar indicadores de audio durante la llamada
+ */
+function animateAudioIndicators() {
+    const localWave = document.querySelector('.audio-wave.local');
+    const remoteWave = document.querySelector('.audio-wave.remote');
+    
+    if (localWave) {
+        const spans = localWave.querySelectorAll('span');
+        spans.forEach((span, index) => {
+            span.style.animation = `wave 1s ease-in-out infinite`;
+            span.style.animationDelay = `${index * 0.1}s`;
+        });
+    }
+    
+    if (remoteWave) {
+        const spans = remoteWave.querySelectorAll('span');
+        spans.forEach((span, index) => {
+            span.style.animation = `wave 1s ease-in-out infinite`;
+            span.style.animationDelay = `${index * 0.1}s`;
+        });
+    }
 }
 
 export default Chat;

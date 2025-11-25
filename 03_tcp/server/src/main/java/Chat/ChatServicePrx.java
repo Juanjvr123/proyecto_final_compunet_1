@@ -804,6 +804,92 @@ public interface ChatServicePrx extends com.zeroc.Ice.ObjectPrx
         return f;
     }
 
+    default Response sendAudioChunk(String from, String to, byte[] audioData)
+    {
+        return sendAudioChunk(from, to, audioData, com.zeroc.Ice.ObjectPrx.noExplicitContext);
+    }
+
+    default Response sendAudioChunk(String from, String to, byte[] audioData, java.util.Map<String, String> context)
+    {
+        return _iceI_sendAudioChunkAsync(from, to, audioData, context, true).waitForResponse();
+    }
+
+    default java.util.concurrent.CompletableFuture<Response> sendAudioChunkAsync(String from, String to, byte[] audioData)
+    {
+        return _iceI_sendAudioChunkAsync(from, to, audioData, com.zeroc.Ice.ObjectPrx.noExplicitContext, false);
+    }
+
+    default java.util.concurrent.CompletableFuture<Response> sendAudioChunkAsync(String from, String to, byte[] audioData, java.util.Map<String, String> context)
+    {
+        return _iceI_sendAudioChunkAsync(from, to, audioData, context, false);
+    }
+
+    /**
+     * @hidden
+     * @param iceP_from -
+     * @param iceP_to -
+     * @param iceP_audioData -
+     * @param context -
+     * @param sync -
+     * @return -
+     **/
+    default com.zeroc.IceInternal.OutgoingAsync<Response> _iceI_sendAudioChunkAsync(String iceP_from, String iceP_to, byte[] iceP_audioData, java.util.Map<String, String> context, boolean sync)
+    {
+        com.zeroc.IceInternal.OutgoingAsync<Response> f = new com.zeroc.IceInternal.OutgoingAsync<>(this, "sendAudioChunk", null, sync, null);
+        f.invoke(true, context, null, ostr -> {
+                     ostr.writeString(iceP_from);
+                     ostr.writeString(iceP_to);
+                     ostr.writeByteSeq(iceP_audioData);
+                 }, istr -> {
+                     Response ret;
+                     ret = Response.ice_read(istr);
+                     return ret;
+                 });
+        return f;
+    }
+
+    default Response acceptCall(String from, String to)
+    {
+        return acceptCall(from, to, com.zeroc.Ice.ObjectPrx.noExplicitContext);
+    }
+
+    default Response acceptCall(String from, String to, java.util.Map<String, String> context)
+    {
+        return _iceI_acceptCallAsync(from, to, context, true).waitForResponse();
+    }
+
+    default java.util.concurrent.CompletableFuture<Response> acceptCallAsync(String from, String to)
+    {
+        return _iceI_acceptCallAsync(from, to, com.zeroc.Ice.ObjectPrx.noExplicitContext, false);
+    }
+
+    default java.util.concurrent.CompletableFuture<Response> acceptCallAsync(String from, String to, java.util.Map<String, String> context)
+    {
+        return _iceI_acceptCallAsync(from, to, context, false);
+    }
+
+    /**
+     * @hidden
+     * @param iceP_from -
+     * @param iceP_to -
+     * @param context -
+     * @param sync -
+     * @return -
+     **/
+    default com.zeroc.IceInternal.OutgoingAsync<Response> _iceI_acceptCallAsync(String iceP_from, String iceP_to, java.util.Map<String, String> context, boolean sync)
+    {
+        com.zeroc.IceInternal.OutgoingAsync<Response> f = new com.zeroc.IceInternal.OutgoingAsync<>(this, "acceptCall", null, sync, null);
+        f.invoke(true, context, null, ostr -> {
+                     ostr.writeString(iceP_from);
+                     ostr.writeString(iceP_to);
+                 }, istr -> {
+                     Response ret;
+                     ret = Response.ice_read(istr);
+                     return ret;
+                 });
+        return f;
+    }
+
     /**
      * Contacts the remote server to verify that the object implements this type.
      * Raises a local exception if a communication error occurs.

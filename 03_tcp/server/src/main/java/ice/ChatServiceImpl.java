@@ -423,6 +423,44 @@ public class ChatServiceImpl implements ChatService {
         }
     }
     
+    // ========== STREAMING DE AUDIO POR WEBSOCKET ==========
+    
+    @Override
+    public Response sendAudioChunk(String from, String to, byte[] audioData, Current current) {
+        System.out.println("[ICE] Audio chunk from " + from + " to " + to + " (" + audioData.length + " bytes)");
+        
+        ChatCallbackPrx callback = callbacks.get(to);
+        if (callback != null) {
+            try {
+                callback.onAudioChunkAsync(from, audioData);
+                return new Response(true, "Audio chunk enviado");
+            } catch (Exception e) {
+                System.err.println("[ICE] Error sending audio chunk: " + e.getMessage());
+                return new Response(false, "Error al enviar audio");
+            }
+        } else {
+            return new Response(false, "Usuario offline");
+        }
+    }
+    
+    @Override
+    public Response acceptCall(String from, String to, Current current) {
+        System.out.println("[ICE] Call accepted: " + from + " accepted call from " + to);
+        
+        ChatCallbackPrx callback = callbacks.get(to);
+        if (callback != null) {
+            try {
+                callback.onCallAcceptedAsync(from);
+                return new Response(true, "Llamada aceptada");
+            } catch (Exception e) {
+                System.err.println("[ICE] Error notifying call acceptance: " + e.getMessage());
+                return new Response(false, "Error");
+            }
+        } else {
+            return new Response(false, "Usuario offline");
+        }
+    }
+    
     // ========== HELPERS ==========
     
     /**

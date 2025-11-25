@@ -1,4 +1,4 @@
-# 💬 Sistema de Chat con ZeroC Ice y WebRTC
+# 💬 Sistema de Chat con ZeroC Ice
 **Proyecto Final - Computación en Internet I**
 
 ---
@@ -13,7 +13,7 @@
 
 ## 📋 Descripción del Proyecto
 
-Sistema de chat en tiempo real que utiliza **ZeroC Ice** como middleware de comunicación RPC y **WebRTC** para llamadas de audio P2P. El proyecto migra de una arquitectura basada en sockets TCP a una implementación moderna con Ice sobre WebSocket, permitiendo comunicación bidireccional en tiempo real desde el navegador.
+Sistema de chat en tiempo real que utiliza **ZeroC Ice** como middleware de comunicación RPC para **todas las funcionalidades**, incluyendo mensajería, notas de voz y llamadas de audio en tiempo real. El proyecto migra completamente a una arquitectura basada en Ice sobre WebSocket, permitiendo comunicación bidireccional en tiempo real desde el navegador sin necesidad de WebRTC P2P.
 
 ### Características Principales
 
@@ -21,7 +21,7 @@ Sistema de chat en tiempo real que utiliza **ZeroC Ice** como middleware de comu
 ✅ **Chats privados** entre usuarios  
 ✅ **Grupos de chat** con múltiples participantes  
 ✅ **Notas de voz** grabadas desde el navegador (MediaRecorder API)  
-✅ **Llamadas de audio** usando WebRTC con señalización vía Ice  
+✅ **Llamadas de audio en tiempo real** usando Ice WebSocket (streaming de audio)  
 ✅ **Historial persistente** de mensajes (texto y audio) en formato JSONL  
 ✅ **Interfaz web moderna** con diseño responsive  
 
@@ -38,13 +38,14 @@ Sistema de chat en tiempo real que utiliza **ZeroC Ice** como middleware de comu
 │  │  Frontend (HTML + CSS + JavaScript)                  │   │
 │  │  - Chat.js (UI principal)                            │   │
 │  │  - iceDelegate.js (Cliente Ice)                      │   │
-│  │  - webrtcService.js (Llamadas WebRTC)                │   │
-│  └──────────────┬────────────────────┬──────────────────┘   │
-└─────────────────┼────────────────────┼──────────────────────┘
-                  │                    │
-        Ice WebSocket (ws://10001)   WebRTC P2P
-                  │                    │
-┌─────────────────▼────────────────────▼──────────────────────┐
+│  │  - webrtcService.js (Audio Streaming)                │   │
+│  └──────────────────────┬───────────────────────────────┘   │
+└─────────────────────────┼───────────────────────────────────┘
+                          │
+              Ice WebSocket (ws://10001)
+          (Mensajes, Voz, Llamadas de Audio)
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
 │              SERVIDOR JAVA (Backend)                         │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  Ice RPC Layer                                       │   │
@@ -61,7 +62,7 @@ Sistema de chat en tiempo real que utiliza **ZeroC Ice** como middleware de comu
 │  │    ├─ Mensajería (privada y grupos)                 │    │
 │  │    ├─ Callbacks (notificaciones push)               │    │
 │  │    ├─ Notas de voz                                  │    │
-│  │    └─ Señalización WebRTC (relay)                   │    │
+│  │    └─ Streaming de audio (relay de llamadas)       │    │
 │  └──────────────────────┬──────────────────────────────┘   │
 │                         │                                    │
 │  ┌──────────────────────▼─────────────────────────────┐    │
@@ -86,8 +87,8 @@ El proyecto sigue una arquitectura en capas claramente definida:
 
 #### **2. Capa de Comunicación (Ice Client)**
 - **`iceDelegate.js`**: Cliente Ice, gestión de conexión WebSocket, callbacks
-- **`webrtcService.js`**: Lógica de WebRTC (PeerConnection, señalización)
-- **Responsabilidad**: Comunicación RPC, manejo de callbacks en tiempo real
+- **`webrtcService.js`**: Streaming de audio (MediaRecorder, AudioContext)
+- **Responsabilidad**: Comunicación RPC, manejo de callbacks en tiempo real, streaming de audio
 
 #### **3. Capa de Transporte (Ice Middleware)**
 - **`Chat.ice`**: Definiciones IDL (interfaces, structs, callbacks)
@@ -105,7 +106,7 @@ El proyecto sigue una arquitectura en capas claramente definida:
   - Enrutamiento de mensajes
   - Administración de grupos
   - Callbacks para notificaciones push
-  - Relay de señales WebRTC
+  - Relay de audio en tiempo real (streaming)
 - **Responsabilidad**: Reglas de negocio, estado de la aplicación
 
 #### **6. Capa de Persistencia**
@@ -192,7 +193,7 @@ Cliente (Navegador)          Ice Server              Servidor
 **Tecnología**: MediaRecorder API + Ice ByteSeq  
 **Formato**: WebM/Opus → Base64 → Ice ByteSeq
 
-### 4. Llamada de Audio WebRTC
+### 4. Llamada de Audio por WebSocket
 
 ```
 Usuario A (Caller)          Ice Server          Servidor          Usuario B (Callee)
@@ -203,37 +204,33 @@ Usuario A (Caller)          Ice Server          Servidor          Usuario B (Cal
   │                            │                   │                    │
   │                            │                   │                    │◀─Usuario acepta
   │                            │                   │                    │
-  │  RTCPeerConnection         │                   │         RTCPeerConnection
-  │  createOffer()             │                   │                    │
-  │         │                  │                   │                    │
-  │         ▼                  │                   │                    │
-  │  [SDP Offer]               │                   │                    │
-  │         │                  │                   │                    │
-  │─sendWebRTCSignal()────────▶│─────RPC──────────▶│────callback────────▶│
-  │  (offer, sdpData)          │                   │  onWebRTCSignal()  │
+  │                            │                   │◀───acceptCall()────│
+  │◀───────────────────────────│◀─────RPC─────────│                    │
+  │  onCallAccepted()          │                   │                    │
   │                            │                   │                    │
-  │                            │                   │                    │  setRemoteDesc()
-  │                            │                   │                    │  createAnswer()
-  │                            │                   │                    │      │
-  │                            │                   │                    │      ▼
-  │                            │                   │                    │  [SDP Answer]
-  │                            │                   │                    │      │
-  │◀───────────────────────────│◀─────RPC─────────│◀───sendWebRTCSignal()────┘
-  │  onWebRTCSignal(answer)    │                   │                    │
+  │ [MediaRecorder captura]    │                   │   [MediaRecorder]  │
+  │ [audio en chunks 100ms]    │                   │   [captura audio]  │
   │                            │                   │                    │
-  │  setRemoteDesc()           │                   │                    │
+  │──sendAudioChunk()─────────▶│─────RPC──────────▶│────callback────────▶│
+  │  (cada 100ms)              │                   │  onAudioChunk()    │
+  │──sendAudioChunk()─────────▶│─────RPC──────────▶│────callback────────▶│
+  │──sendAudioChunk()─────────▶│─────RPC──────────▶│────callback────────▶│
+  │                            │                   │   [AudioContext    │
+  │                            │                   │    reproduce audio]│
   │                            │                   │                    │
-  │←──────────────────ICE Candidates Exchange──────────────────────────▶│
-  │                  (sendICECandidate via Ice)                         │
+  │◀──────sendAudioChunk()─────│◀─────RPC─────────│◀───────────────────│
+  │  onAudioChunk() callback   │                   │  (cada 100ms)      │
+  │◀──────sendAudioChunk()─────│◀─────RPC─────────│◀───────────────────│
+  │  [AudioContext reproduce]  │                   │                    │
   │                            │                   │                    │
-  │                            │                   │                    │
-  │═══════════════════WebRTC P2P Audio Stream══════════════════════════│
-  │                     (Conexión directa sin servidor)                 │
+  │═══════════════════Audio via Ice WebSocket═════════════════════════│
+  │              (Todo el audio fluye por el servidor)                 │
 ```
 
-**Tecnología**: WebRTC (P2P) + Ice (señalización)  
-**Patrón**: Servidor Ice actúa como relay de señalización (SDP + ICE candidates)  
-**Audio**: Conexión P2P directa entre navegadores usando STUN
+**Tecnología**: Ice WebSocket (ws://localhost:10001) para todo el audio  
+**Patrón**: Servidor actúa como relay completo del audio en tiempo real  
+**Audio**: MediaRecorder (captura) → Ice ByteSeq → AudioContext (reproducción)  
+**Latencia**: ~100-150ms (mayor que P2P pero sin necesidad de STUN/TURN)
 
 ---
 
@@ -249,16 +246,15 @@ Usuario A (Caller)          Ice Server          Servidor          Usuario B (Cal
 - **HTML5 + CSS3** - Estructura y diseño de la interfaz
 - **JavaScript (ES6+)** - Lógica del cliente
 - **Ice.js 3.7.10** - Cliente Ice para navegador (WebSocket)
-- **WebRTC API** - Llamadas de audio peer-to-peer
-- **MediaRecorder API** - Grabación de notas de voz
+- **MediaRecorder API** - Captura de audio en tiempo real
+- **AudioContext API** - Reproducción de audio streaming
 - **Webpack 5** - Empaquetador de módulos JavaScript
 - **Babel** - Transpilador ES6+ a ES5
 
 ### Protocolos y Estándares
 - **Ice RPC** - Remote Procedure Calls
-- **WebSocket (ws://)** - Transporte bidireccional para Ice
-- **WebRTC** - Comunicación multimedia en tiempo real
-- **STUN** - NAT traversal para WebRTC (stun.l.google.com)
+- **WebSocket (ws://)** - Transporte bidireccional para Ice (mensajes, audio, llamadas)
+- **Audio Streaming** - Chunks de audio en tiempo real vía Ice ByteSeq
 
 ---
 
@@ -318,7 +314,8 @@ Usuario A (Caller)          Ice Server          Servidor          Usuario B (Cal
 │   │   │
 │   │   └── services/
 │   │       ├── iceDelegate.js       # Cliente Ice + Callbacks
-│   │       └── webrtcService.js     # Servicio de llamadas WebRTC
+│   │       ├── webrtcService.js     # Servicio de streaming de audio
+│   │       └── audioRecorder.js     # Grabación de notas de voz
 │   │
 │   ├── index.html                   # HTML principal
 │   ├── index.css                    # Estilos globales
@@ -489,10 +486,11 @@ Para probar la funcionalidad en tiempo real:
    - Avatar animado
    - Botón **✓ Aceptar** (verde)
    - Botón **✕ Rechazar** (rojo)
-4. Al aceptar, se establece la conexión WebRTC P2P
+4. Al aceptar, se establece el streaming de audio vía WebSocket
 5. Durante la llamada:
-   - Se muestran indicadores visuales
-   - Audio bidireccional en tiempo real
+   - Se muestran **indicadores de audio animados** (ondas)
+   - Audio bidireccional en tiempo real (latencia ~100-150ms)
+   - Todo el audio fluye por el servidor Ice
 6. Clic en **🔴 Colgar** para terminar
 
 ### 6. Ver Historial
@@ -514,7 +512,7 @@ Para probar la funcionalidad en tiempo real:
 | ✅ Mensajes a grupos | Implementado | Broadcasting a todos los miembros |
 | ✅ Visualizar historial | Implementado | Carga automática desde JSONL |
 | ✅ Envío de notas de voz | Implementado | MediaRecorder API + Ice ByteSeq |
-| ✅ Llamadas de audio | Implementado | WebRTC con señalización Ice |
+| ✅ Llamadas de audio | Implementado | Streaming de audio vía Ice WebSocket |
 | ✅ Actualización en tiempo real | Implementado | Ice callbacks bidireccionales |
 
 ### Criterios de Evaluación
@@ -532,10 +530,6 @@ Para probar la funcionalidad en tiempo real:
 ---
 
 ## 🔧 Solución de Problemas
-
-### Error: "PeerConnection not initialized"
-**Causa**: El offer WebRTC llegó antes de que el usuario aceptara la llamada.  
-**Solución**: Ya implementado - Se almacenan en buffer y procesan al aceptar.
 
 ### Error: "Cannot find module 'ice'"
 **Causa**: Dependencias no instaladas en `web-client/`.  
@@ -671,17 +665,20 @@ Todos los derechos reservados © 2025
    - Reproducción: `<audio>` element dinámico
 
 5. **✅ Llamadas con WebSockets**
-   - WebRTC: P2P audio usando STUN
-   - Señalización: Ice callbacks (`onWebRTCSignal`, `onICECandidate`)
-   - Transporte: WebSocket (ws://localhost:10001)
+   - Streaming: Audio en tiempo real vía Ice WebSocket
+   - Captura: MediaRecorder API (chunks de 100ms)
+   - Reproducción: AudioContext API
+   - Callbacks: `onAudioChunk()`, `onCallAccepted()`, `onIncomingCall()`
+   - Transporte: Todo por WebSocket (ws://localhost:10001)
+   - Latencia: ~100-150ms (aceptable para llamadas de voz)
 
 ### Decisiones de Diseño
 
 - **¿Por qué no migrar todo a Ice?**  
   El enunciado permite mantener servicios HTTP. Elegimos migrar todo a Ice para aprovechar callbacks bidireccionales y eliminar polling.
 
-- **¿Por qué WebRTC P2P en vez de servidor media?**  
-  Menor latencia, no requiere servidor de media, soporta NAT traversal con STUN.
+- **¿Por qué streaming por WebSocket en vez de WebRTC P2P?**  
+  Mayor control del servidor, posibilidad de grabar/monitorear llamadas, sin necesidad de STUN/TURN, más simple de implementar y debuggear. El trade-off de latencia (~100ms adicionales) es aceptable para llamadas de voz.
 
 - **Formato de historial JSONL (JSON Lines)**  
   Permite append eficiente, fácil de parsear, un mensaje por línea.
@@ -691,7 +688,8 @@ Todos los derechos reservados © 2025
 - ✅ Chat privado entre 2 usuarios
 - ✅ Chat grupal con 3+ usuarios
 - ✅ Nota de voz privada y grupal
-- ✅ Llamada entre 2 usuarios con audio bidireccional
+- ✅ Llamada entre 2 usuarios con audio bidireccional vía WebSocket
+- ✅ Streaming de audio en tiempo real con latencia < 200ms
 - ✅ Reconexión tras cierre de navegador (historial persiste)
 - ✅ Múltiples sesiones simultáneas (5+ usuarios)
 

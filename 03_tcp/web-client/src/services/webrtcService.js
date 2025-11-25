@@ -1,26 +1,21 @@
 /**
- * WebRTC Service - Manejo de llamadas de audio/video
+ * Audio Streaming Service - Manejo de llamadas de audio vía WebSocket
  */
 
-import { sendWebRTCSignal, sendICECandidate, endCall } from './iceDelegate.js';
+import { sendAudioChunk, endCall, acceptCall } from './iceDelegate.js';
 
-let peerConnection = null;
 let localStream = null;
 let remoteUsername = null;
 let currentUsername = null;
-
-// Buffer para almacenar offer/candidates que llegan antes de aceptar
-let pendingOffer = null;
-let pendingCandidates = [];
-
-// Configuración de servidores STUN/TURN (Google public STUN servers)
-const iceServers = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-    ]
-};
+let mediaRecorder = null;
+let isStreaming = false;
+let audioContext = null;
+let audioQueue = [];
+let isPlaying = false;
+let audioElement = null;
+let sourceBuffer = null;
+let mediaSource = null;
+let pendingChunks = [];
 
 /**
  * Inicializar el servicio WebRTC
@@ -31,254 +26,241 @@ export function initWebRTC(username) {
 }
 
 /**
- * Iniciar llamada (crear offer)
+ * Iniciar llamada (iniciar streaming de audio)
  */
 export async function startCall(from, to, audioOnly = false) {
     try {
-        console.log('[WebRTC] Starting call from', from, 'to', to);
+        console.log('[AUDIO-WS] Starting call from', from, 'to', to);
         remoteUsername = to;
+        currentUsername = from;
         
-        // Obtener stream local (audio y/o video)
-        const constraints = audioOnly ? { audio: true, video: false } : { audio: true, video: true };
+        // Desbloquear autoplay con audio silencioso (user interaction)
+        await unlockAudioPlayback();
+        
+        // Inicializar MediaSource para recibir audio
+        await initMediaSource();
+        
+        // Obtener stream local
+        const constraints = { audio: true, video: false };
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log('[WebRTC] Local stream obtained');
-        console.log('[WebRTC] Local audio tracks:', localStream.getAudioTracks().length);
-        console.log('[WebRTC] Local video tracks:', localStream.getVideoTracks().length);
+        console.log('[AUDIO-WS] Local stream obtained');
         
-        // Verificar que los tracks de audio estén habilitados
-        localStream.getAudioTracks().forEach(track => {
-            console.log('[WebRTC] Local audio track:', track.id, 'enabled:', track.enabled, 'muted:', track.muted);
-        });
-        
-        // Crear PeerConnection
-        peerConnection = new RTCPeerConnection(iceServers);
-        console.log('[WebRTC] PeerConnection created for calling');
-        
-        // Agregar tracks del stream local
-        localStream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, localStream);
-            console.log('[WebRTC] Added local track to peer:', track.kind, 'enabled:', track.enabled);
-        });
-        
-        // Manejar ICE candidates
-        peerConnection.onicecandidate = async (event) => {
-            if (event.candidate) {
-                console.log('[WebRTC] Sending ICE candidate');
-                await sendICECandidate(from, to, JSON.stringify(event.candidate));
-            }
-        };
-        
-        // Manejar stream remoto
-        peerConnection.ontrack = (event) => {
-            console.log('[WebRTC] 🎵 Remote track received (caller):', event.track.kind);
-            console.log('[WebRTC] Track enabled:', event.track.enabled);
-            console.log('[WebRTC] Track muted:', event.track.muted);
-            console.log('[WebRTC] Track readyState:', event.track.readyState);
-            
-            const [remoteStream] = event.streams;
-            if (remoteStream) {
-                console.log('[WebRTC] Remote stream tracks:', remoteStream.getTracks().map(t => `${t.kind}: enabled=${t.enabled}, muted=${t.muted}, readyState=${t.readyState}`));
-                displayRemoteStream(remoteStream);
-            } else {
-                console.error('[WebRTC] No remote stream in event!');
-            }
-        };
-        
-        // Manejar cambios en el estado de conexión
-        peerConnection.onconnectionstatechange = () => {
-            console.log('[WebRTC] Connection state:', peerConnection.connectionState);
-        };
-        
-        peerConnection.oniceconnectionstatechange = () => {
-            console.log('[WebRTC] ICE connection state:', peerConnection.iceConnectionState);
-        };
-        
-        // Crear offer
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        console.log('[WebRTC] Offer created');
-        
-        // Enviar offer al otro usuario
-        await sendWebRTCSignal(from, to, 'offer', JSON.stringify(offer));
+        // Iniciar streaming de audio
+        await startAudioStreaming(from, to);
         
         return { success: true, localStream };
         
     } catch (error) {
-        console.error('[WebRTC] Error starting call:', error);
+        console.error('[AUDIO-WS] Error starting call:', error);
         return { success: false, error: error.message };
     }
 }
 
 /**
- * Responder a una llamada entrante (crear answer)
+ * Iniciar streaming de audio por WebSocket
+ */
+async function startAudioStreaming(from, to) {
+    try {
+        // Configurar MediaRecorder para capturar audio en chunks pequeños
+        const options = { mimeType: 'audio/webm;codecs=opus' };
+        mediaRecorder = new MediaRecorder(localStream, options);
+        
+        // Enviar chunks de audio en tiempo real
+        mediaRecorder.ondataavailable = async (event) => {
+            if (event.data.size > 0 && isStreaming) {
+                const arrayBuffer = await event.data.arrayBuffer();
+                const uint8Array = new Uint8Array(arrayBuffer);
+                
+                // Enviar chunk por WebSocket
+                await sendAudioChunk(from, to, uint8Array);
+                console.log('[AUDIO-WS] Sent audio chunk:', uint8Array.length, 'bytes');
+            }
+        };
+        
+        mediaRecorder.onstart = () => {
+            console.log('[AUDIO-WS] ▶️ Audio streaming started');
+            isStreaming = true;
+        };
+        
+        mediaRecorder.onstop = () => {
+            console.log('[AUDIO-WS] ⏹️ Audio streaming stopped');
+            isStreaming = false;
+        };
+        
+        // Iniciar grabación con chunks de 500ms 
+        // (necesario para que cada chunk tenga headers WebM válidos)
+        mediaRecorder.start(500);
+        
+    } catch (error) {
+        console.error('[AUDIO-WS] Error starting audio streaming:', error);
+        throw error;
+    }
+}
+
+/**
+ * Responder a una llamada entrante
  */
 export async function answerCall(from, to, audioOnly = false) {
     try {
-        console.log('[WebRTC] Answering call from', from);
+        console.log('[AUDIO-WS] Answering call from', from);
         remoteUsername = from;
+        currentUsername = to;
+        
+        // Desbloquear autoplay con audio silencioso (user interaction)
+        await unlockAudioPlayback();
+        
+        // Inicializar MediaSource para recibir audio
+        await initMediaSource();
         
         // Obtener stream local
-        const constraints = audioOnly ? { audio: true, video: false } : { audio: true, video: true };
+        const constraints = { audio: true, video: false };
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log('[WebRTC] Local stream obtained');
-        console.log('[WebRTC] Local audio tracks:', localStream.getAudioTracks().length);
-        console.log('[WebRTC] Local video tracks:', localStream.getVideoTracks().length);
+        console.log('[AUDIO-WS] Local stream obtained');
         
-        // Crear PeerConnection
-        peerConnection = new RTCPeerConnection(iceServers);
-        console.log('[WebRTC] PeerConnection created for answering');
+        // Notificar aceptación al servidor
+        await acceptCall(to, from);
         
-        // Agregar tracks del stream local
-        localStream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, localStream);
-            console.log('[WebRTC] Added local track to peer:', track.kind, 'enabled:', track.enabled);
-        });
-        
-        // Manejar ICE candidates
-        peerConnection.onicecandidate = async (event) => {
-            if (event.candidate) {
-                console.log('[WebRTC] Sending ICE candidate');
-                await sendICECandidate(to, from, JSON.stringify(event.candidate));
-            }
-        };
-        
-        // Manejar stream remoto
-        peerConnection.ontrack = (event) => {
-            console.log('[WebRTC] 🎵 Remote track received (answer):', event.track.kind);
-            console.log('[WebRTC] Track enabled:', event.track.enabled);
-            console.log('[WebRTC] Track muted:', event.track.muted);
-            console.log('[WebRTC] Track readyState:', event.track.readyState);
-            
-            const [remoteStream] = event.streams;
-            if (remoteStream) {
-                console.log('[WebRTC] Remote stream tracks:', remoteStream.getTracks().map(t => `${t.kind}: enabled=${t.enabled}, muted=${t.muted}, readyState=${t.readyState}`));
-                displayRemoteStream(remoteStream);
-            } else {
-                console.error('[WebRTC] No remote stream in event!');
-            }
-        };
-        
-        // Manejar cambios en el estado de conexión
-        peerConnection.onconnectionstatechange = () => {
-            console.log('[WebRTC] Connection state:', peerConnection.connectionState);
-        };
-        
-        peerConnection.oniceconnectionstatechange = () => {
-            console.log('[WebRTC] ICE connection state:', peerConnection.iceConnectionState);
-        };
-        
-        // Procesar offer y candidates pendientes
-        if (pendingOffer) {
-            console.log('[WebRTC] Processing pending offer...');
-            const { from: offerFrom, to: offerTo, offerData } = pendingOffer;
-            pendingOffer = null;
-            
-            const offer = JSON.parse(offerData);
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-            console.log('[WebRTC] ✅ Pending offer processed');
-            
-            // Crear answer
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            console.log('[WebRTC] Answer created');
-            
-            // Enviar answer
-            await sendWebRTCSignal(offerTo, offerFrom, 'answer', JSON.stringify(answer));
-        }
-        
-        // Procesar candidates pendientes
-        if (pendingCandidates.length > 0) {
-            console.log(`[WebRTC] Processing ${pendingCandidates.length} pending ICE candidates...`);
-            for (const { candidateData } of pendingCandidates) {
-                try {
-                    const candidate = JSON.parse(candidateData);
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                    console.log('[WebRTC] ✅ Pending ICE candidate added');
-                } catch (err) {
-                    console.error('[WebRTC] Error adding pending candidate:', err);
-                }
-            }
-            pendingCandidates = [];
-        }
+        // Iniciar streaming de audio
+        await startAudioStreaming(to, from);
         
         return { success: true, localStream };
         
     } catch (error) {
-        console.error('[WebRTC] Error answering call:', error);
+        console.error('[AUDIO-WS] Error answering call:', error);
         return { success: false, error: error.message };
     }
 }
 
 /**
- * Manejar offer recibido
+ * Desbloquear reproducción de audio (soluciona NotAllowedError)
  */
-export async function handleOffer(from, to, offerData) {
+async function unlockAudioPlayback() {
     try {
-        console.log('[WebRTC] Handling offer from', from);
-        
-        if (!peerConnection) {
-            console.warn('[WebRTC] PeerConnection not initialized yet, storing offer for later');
-            pendingOffer = { from, to, offerData };
-            return;
+        // Crear audio context y reproducir silencio brevemente
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
         
-        const offer = JSON.parse(offerData);
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        console.log('[WebRTC] Remote description set');
+        // Crear buffer de silencio
+        const buffer = audioContext.createBuffer(1, 1, 22050);
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        source.start(0);
         
-        // Crear answer
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        console.log('[WebRTC] Answer created');
-        
-        // Enviar answer
-        await sendWebRTCSignal(to, from, 'answer', JSON.stringify(answer));
-        
+        console.log('[AUDIO-WS] Audio playback unlocked');
     } catch (error) {
-        console.error('[WebRTC] Error handling offer:', error);
+        console.warn('[AUDIO-WS] Could not unlock audio:', error);
     }
 }
 
 /**
- * Manejar answer recibido
+ * Inicializar MediaSource para streaming de audio
  */
-export async function handleAnswer(from, answerData) {
-    try {
-        console.log('[WebRTC] Handling answer from', from);
-        
-        if (!peerConnection) {
-            console.error('[WebRTC] PeerConnection not initialized');
+function initMediaSource() {
+    return new Promise((resolve, reject) => {
+        if (audioElement && mediaSource && mediaSource.readyState === 'open') {
+            resolve();
             return;
         }
         
-        const answer = JSON.parse(answerData);
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        console.log('[WebRTC] Remote description set');
+        // Limpiar existentes
+        if (audioElement) {
+            audioElement.pause();
+            audioElement.src = '';
+        }
         
-    } catch (error) {
-        console.error('[WebRTC] Error handling answer:', error);
-    }
+        audioElement = new Audio();
+        audioElement.autoplay = true;
+        audioElement.volume = 1.0;
+        
+        mediaSource = new MediaSource();
+        audioElement.src = URL.createObjectURL(mediaSource);
+        
+        mediaSource.addEventListener('sourceopen', () => {
+            if (mediaSource.readyState === 'open' && !sourceBuffer) {
+                try {
+                    sourceBuffer = mediaSource.addSourceBuffer('audio/webm; codecs="opus"');
+                    sourceBuffer.mode = 'sequence';
+                    
+                    sourceBuffer.addEventListener('updateend', () => {
+                        if (pendingChunks.length > 0 && !sourceBuffer.updating) {
+                            const nextChunk = pendingChunks.shift();
+                            try {
+                                sourceBuffer.appendBuffer(nextChunk);
+                            } catch (e) {
+                                console.warn('[AUDIO-WS] Error appending queued chunk:', e.message);
+                            }
+                        }
+                    });
+                    
+                    sourceBuffer.addEventListener('error', (e) => {
+                        console.error('[AUDIO-WS] SourceBuffer error:', e);
+                    });
+                    
+                    console.log('[AUDIO-WS] MediaSource initialized for streaming');
+                    resolve();
+                } catch (error) {
+                    console.error('[AUDIO-WS] Error creating SourceBuffer:', error);
+                    reject(error);
+                }
+            }
+        });
+        
+        mediaSource.addEventListener('sourceended', () => {
+            console.log('[AUDIO-WS] MediaSource ended');
+        });
+        
+        mediaSource.addEventListener('error', (e) => {
+            console.error('[AUDIO-WS] MediaSource error:', e);
+            reject(e);
+        });
+        
+        // Timeout si no se inicializa en 5 segundos
+        setTimeout(() => {
+            if (!sourceBuffer) {
+                reject(new Error('MediaSource initialization timeout'));
+            }
+        }, 5000);
+    });
 }
 
 /**
- * Agregar candidato ICE recibido
+ * Recibir y reproducir chunk de audio
  */
-export async function addICECandidate(from, candidateData) {
+export async function receiveAudioChunk(audioData) {
     try {
-        console.log('[WebRTC] Adding ICE candidate from', from);
-        
-        if (!peerConnection) {
-            console.warn('[WebRTC] PeerConnection not initialized yet, storing candidate for later');
-            pendingCandidates.push({ from, candidateData });
+        // Ignorar chunks muy pequeños
+        if (audioData.length < 100) {
             return;
         }
         
-        const candidate = JSON.parse(candidateData);
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log('[WebRTC] ICE candidate added');
+        // Inicializar MediaSource si no existe
+        if (!mediaSource || mediaSource.readyState !== 'open') {
+            pendingChunks.push(audioData);
+            if (!mediaSource) {
+                await initMediaSource();
+            }
+            return;
+        }
+        
+        // Si sourceBuffer está listo y no está actualizando
+        if (sourceBuffer && !sourceBuffer.updating && mediaSource.readyState === 'open') {
+            try {
+                sourceBuffer.appendBuffer(audioData);
+                console.log('[AUDIO-WS] 🔊 Appended audio chunk:', audioData.length, 'bytes');
+            } catch (error) {
+                console.warn('[AUDIO-WS] Error appending chunk:', error.message);
+                // Si falla, agregar a cola
+                pendingChunks.push(audioData);
+            }
+        } else {
+            // Agregar a cola de pendientes
+            pendingChunks.push(audioData);
+        }
         
     } catch (error) {
-        console.error('[WebRTC] Error adding ICE candidate:', error);
+        console.error('[AUDIO-WS] Error receiving audio chunk:', error);
     }
 }
 
@@ -287,7 +269,13 @@ export async function addICECandidate(from, candidateData) {
  */
 export async function hangUp(from, to) {
     try {
-        console.log('[WebRTC] Hanging up call');
+        console.log('[AUDIO-WS] Hanging up call');
+        
+        // Detener streaming
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        isStreaming = false;
         
         // Detener tracks locales
         if (localStream) {
@@ -295,15 +283,32 @@ export async function hangUp(from, to) {
             localStream = null;
         }
         
-        // Cerrar PeerConnection
-        if (peerConnection) {
-            peerConnection.close();
-            peerConnection = null;
+        // Limpiar MediaSource
+        if (mediaSource && mediaSource.readyState === 'open') {
+            try {
+                mediaSource.endOfStream();
+            } catch (e) {}
         }
         
-        // Limpiar buffers pendientes
-        pendingOffer = null;
-        pendingCandidates = [];
+        if (audioElement) {
+            audioElement.pause();
+            audioElement.src = '';
+            audioElement = null;
+        }
+        
+        mediaSource = null;
+        sourceBuffer = null;
+        pendingChunks = [];
+        
+        // Limpiar colas de audio
+        audioQueue = [];
+        isPlaying = false;
+        
+        // Cerrar AudioContext
+        if (audioContext && audioContext.state !== 'closed') {
+            await audioContext.close();
+            audioContext = null;
+        }
         
         // Notificar al servidor
         if (to) {
@@ -313,10 +318,10 @@ export async function hangUp(from, to) {
         // Limpiar UI
         clearCallUI();
         
-        console.log('[WebRTC] Call ended');
+        console.log('[AUDIO-WS] Call ended');
         
     } catch (error) {
-        console.error('[WebRTC] Error hanging up:', error);
+        console.error('[AUDIO-WS] Error hanging up:', error);
     }
 }
 
@@ -328,45 +333,16 @@ export function getLocalStream() {
 }
 
 /**
- * Mostrar stream remoto en la UI
+ * Mostrar indicador de audio remoto en la UI
  */
-function displayRemoteStream(stream) {
-    console.log('[WebRTC] Displaying remote stream');
-    console.log('[WebRTC] Stream has audio tracks:', stream.getAudioTracks().length);
-    console.log('[WebRTC] Stream has video tracks:', stream.getVideoTracks().length);
+function displayRemoteStream() {
+    console.log('[AUDIO-WS] Audio streaming active');
     
-    // Función para intentar configurar el video remoto
-    const trySetRemoteVideo = (retries = 0) => {
-        const remoteVideo = document.getElementById('remoteVideo');
-        
-        if (!remoteVideo) {
-            if (retries < 10) {
-                console.log(`[WebRTC] Remote video not found, retry ${retries + 1}/10`);
-                setTimeout(() => trySetRemoteVideo(retries + 1), 100);
-            } else {
-                console.error('[WebRTC] Remote video element not found after 10 retries');
-            }
-            return;
-        }
-        
-        console.log('[WebRTC] Remote video element found, configuring...');
-        
-        // Configurar y asignar stream
-        remoteVideo.srcObject = stream;
-        remoteVideo.muted = false; // IMPORTANTE: no mutear el audio remoto
-        remoteVideo.volume = 1.0; // Volumen al máximo
-        
-        // Forzar reproducción
-        remoteVideo.play().then(() => {
-            console.log('[WebRTC] ✅ Remote video playing successfully with audio');
-            console.log('[WebRTC] Audio tracks enabled:', stream.getAudioTracks().map(t => t.enabled));
-        }).catch(err => {
-            console.error('[WebRTC] Error playing remote video:', err);
-        });
-    };
-    
-    // Intentar inmediatamente o con reintentos
-    trySetRemoteVideo();
+    const remoteAudioIndicator = document.getElementById('remoteAudioIndicator');
+    if (remoteAudioIndicator) {
+        remoteAudioIndicator.style.display = 'block';
+        remoteAudioIndicator.innerHTML = '🔊 Recibiendo audio...';
+    }
 }
 
 /**

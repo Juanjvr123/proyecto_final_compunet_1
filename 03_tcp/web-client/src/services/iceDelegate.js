@@ -23,11 +23,13 @@ let onUserStatusChangedCallback = null;
 let onGroupMemberAddedCallback = null;
 let onVoiceNoteReceivedCallback = null;
 
-// Callbacks para llamadas WebRTC
+// Callbacks para llamadas por WebSocket
 let onIncomingCallCallback = null;
 let onWebRTCSignalCallback = null;
 let onICECandidateCallback = null;
 let onCallEndedCallback = null;
+let onAudioChunkCallback = null;
+let onCallAcceptedCallback = null;
 
 /**
  * Implementación del callback ChatCallback
@@ -139,6 +141,28 @@ const ChatCallbackI = class extends Chat.ChatCallback {
             console.error('[ICE CALLBACK] Error in call ended callback:', error);
         }
     }
+    
+    onAudioChunk(from, audioData, current) {
+        console.log('[ICE CALLBACK] 🔊 Audio chunk from:', from, 'size:', audioData.length);
+        try {
+            if (onAudioChunkCallback) {
+                onAudioChunkCallback(from, audioData);
+            }
+        } catch (error) {
+            console.error('[ICE CALLBACK] Error in audio chunk callback:', error);
+        }
+    }
+    
+    onCallAccepted(from, current) {
+        console.log('[ICE CALLBACK] ✅ Call accepted by:', from);
+        try {
+            if (onCallAcceptedCallback) {
+                onCallAcceptedCallback(from);
+            }
+        } catch (error) {
+            console.error('[ICE CALLBACK] Error in call accepted callback:', error);
+        }
+    }
 }
 
 /**
@@ -159,6 +183,8 @@ export async function initIce(username, callbacks = {}) {
         onWebRTCSignalCallback = callbacks.onWebRTCSignal;
         onICECandidateCallback = callbacks.onICECandidate;
         onCallEndedCallback = callbacks.onCallEnded;
+        onAudioChunkCallback = callbacks.onAudioChunk;
+        onCallAcceptedCallback = callbacks.onCallAccepted;
         
         currentUsername = username;
         
@@ -610,6 +636,43 @@ export async function endCall(from, to) {
         };
     } catch (error) {
         console.error('[ICE] End call error:', error);
+        return { success: false, message: error.message };
+    }
+}
+
+/**
+ * Enviar chunk de audio durante llamada
+ */
+export async function sendAudioChunk(from, to, audioData) {
+    try {
+        const proxy = await getProxy();
+        const byteArray = audioData instanceof Uint8Array ? audioData : new Uint8Array(audioData);
+        const response = await proxy.sendAudioChunk(from, to, byteArray);
+        
+        return {
+            success: response.success,
+            message: response.message
+        };
+    } catch (error) {
+        console.error('[ICE] Send audio chunk error:', error);
+        return { success: false, message: error.message };
+    }
+}
+
+/**
+ * Aceptar llamada
+ */
+export async function acceptCall(from, to) {
+    try {
+        const proxy = await getProxy();
+        const response = await proxy.acceptCall(from, to);
+        
+        return {
+            success: response.success,
+            message: response.message
+        };
+    } catch (error) {
+        console.error('[ICE] Accept call error:', error);
         return { success: false, message: error.message };
     }
 }

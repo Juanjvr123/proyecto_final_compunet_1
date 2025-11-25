@@ -62,6 +62,12 @@ module Chat {
         
         // Notificación de llamada terminada
         void onCallEnded(string from);
+        
+        // Notificación de chunk de audio en tiempo real
+        void onAudioChunk(string from, ByteSeq audioData);
+        
+        // Notificación de llamada aceptada
+        void onCallAccepted(string from);
     };
     
     // ========== RESPUESTA GENÉRICA ==========
@@ -145,5 +151,13 @@ module Chat {
         
         // Terminar llamada
         Response endCall(string from, string to);
+        
+        // ===== Streaming de Audio por WebSocket =====
+        
+        // Enviar chunk de audio durante llamada
+        Response sendAudioChunk(string from, string to, ByteSeq audioData);
+        
+        // Aceptar llamada (respuesta del destinatario)
+        Response acceptCall(string from, string to);
     };
 };

@@ -149,7 +149,9 @@
         "onIncomingCall": [, , , , , [[7]], , , , ],
         "onWebRTCSignal": [, , , , , [[7], [7], [7]], , , , ],
         "onICECandidate": [, , , , , [[7], [7]], , , , ],
-        "onCallEnded": [, , , , , [[7]], , , , ]
+        "onCallEnded": [, , , , , [[7]], , , , ],
+        "onAudioChunk": [, , , , , [[7], ["Chat.ByteSeqHelper"]], , , , ],
+        "onCallAccepted": [, , , , , [[7]], , , , ]
     });
 
     Chat.Response = class
@@ -213,7 +215,9 @@
         "initiateCall": [, , , , [Chat.Response], [[7], [7]], , , , ],
         "sendWebRTCSignal": [, , , , [Chat.Response], [[7], [7], [7], [7]], , , , ],
         "sendICECandidate": [, , , , [Chat.Response], [[7], [7], [7]], , , , ],
-        "endCall": [, , , , [Chat.Response], [[7], [7]], , , , ]
+        "endCall": [, , , , [Chat.Response], [[7], [7]], , , , ],
+        "sendAudioChunk": [, , , , [Chat.Response], [[7], [7], ["Chat.ByteSeqHelper"]], , , , ],
+        "acceptCall": [, , , , [Chat.Response], [[7], [7]], , , , ]
     });
     exports.Chat = Chat;
 }
